@@ -74,3 +74,20 @@ export interface ProfitTrackerEntry {
   laywinBookieAmount: number;
   laywinExchangeAmount: number;
 }
+
+// Multiple salvate
+export interface SavedMultipla {
+  id: number;
+  calculator_type: 'multiplicatore' | 'multiplicatore-coperture';
+  name: string;
+  data: Record<string, any>;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaveMultiplaRequest {
+  calculator_type: string;
+  name: string;
+  data: Record<string, any>;
+}

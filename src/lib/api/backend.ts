@@ -11,6 +11,7 @@ import type {
   EventSearchResult,
   OddsEvent
 } from '@/types/oddsmatcher';
+import type { SavedMultipla, SaveMultiplaRequest } from '@/types/calculator';
 import { authAPI } from './auth';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:5000';
@@ -187,6 +188,45 @@ class BackendAPI {
 
   async getBetTypes(): Promise<ApiResponse<{ key: string; name: string }[]>> {
     return this.request('/api/bet-types');
+  }
+
+  // Saved Multiple
+  async saveMultipla(data: SaveMultiplaRequest): Promise<ApiResponse<SavedMultipla>> {
+    return this.request('/api/multiple', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMultiple(params?: { status?: string; calculator_type?: string }): Promise<ApiResponse<SavedMultipla[]>> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.calculator_type) searchParams.append('calculator_type', params.calculator_type);
+    const qs = searchParams.toString();
+    return this.request(`/api/multiple${qs ? `?${qs}` : ''}`);
+  }
+
+  async getMultipla(id: number): Promise<ApiResponse<SavedMultipla>> {
+    return this.request(`/api/multiple/${id}`);
+  }
+
+  async updateMultipla(id: number, data: SaveMultiplaRequest): Promise<ApiResponse<SavedMultipla>> {
+    return this.request(`/api/multiple/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveMultipla(id: number): Promise<ApiResponse<SavedMultipla>> {
+    return this.request(`/api/multiple/${id}/archive`, {
+      method: 'PATCH',
+    });
+  }
+
+  async deleteMultipla(id: number): Promise<ApiResponse<void>> {
+    return this.request(`/api/multiple/${id}`, {
+      method: 'DELETE',
+    });
   }
 }
 

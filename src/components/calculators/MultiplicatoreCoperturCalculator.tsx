@@ -9,7 +9,6 @@ import {
   Unlock,
   Copy,
   Check,
-  Settings,
   Save,
   FolderOpen,
   Loader2,
@@ -18,13 +17,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  calculateMultiplicatore, 
+import {
+  calculateMultiplicatoreCoperture,
   roundTo,
-  type MultiplicatoreInput,
-  type MultiplicatoreResult,
-  type CoperturaTipo,
-} from "@/lib/calculators/multiplicatore";
+  type MultiplicatoreCopertureInput,
+  type MultiplicatoreCopertureResult,
+} from "@/lib/calculators/multiplicatore-coperture";
 import {
   parseNumericInput,
   copyToClipboard,
@@ -32,6 +30,7 @@ import {
 } from "@/lib/utils";
 import { backendAPI } from "@/lib/api/backend";
 import { SavedMultipleDialog } from "./SavedMultipleDialog";
+import { Input as DialogInput } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -41,22 +40,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import type { BetMode, SavedMultipla } from "@/types/calculator";
-
-// Exchange disponibili (commissioni default come NinjaBet: 0.045 per Betfair, 0.05 per Betflag)
-const EXCHANGES = [
-  { value: 'betfair', label: 'Betfair', commission: 0.045 },
-  { value: 'betflag', label: 'Betflag', commission: 0.05 },
-  { value: '-', label: '----------------', commission: 0 },
-  { value: 'bet365', label: 'Bet365', commission: 0 },
-  { value: 'sisal', label: 'Sisal', commission: 0 },
-  { value: 'snai', label: 'Snai', commission: 0 },
-  { value: 'eurobet', label: 'Eurobet', commission: 0 },
-  { value: 'goldbet', label: 'Goldbet', commission: 0 },
-  { value: 'lottomatica', label: 'Lottomatica', commission: 0 },
-  { value: 'bwin', label: 'Bwin', commission: 0 },
-  { value: 'williamhill', label: 'William Hill', commission: 0 },
-  { value: 'altro', label: 'Altro', commission: 0 },
-];
 
 // Bookmaker disponibili
 const BOOKMAKERS = [
@@ -78,33 +61,24 @@ const BOOKMAKERS = [
   { value: 'altro', label: 'Altro' },
 ];
 
-// Interfaccia per i dati di ogni partita (tutti stringhe per permettere input)
+// State per ogni partita
 interface PartitaState {
-  data: string;
   nome: string;
-  scommessa: string;
-  backOdds: string;
-  layOdds: string;
-  copertura: CoperturaTipo;
-  exchange: string;
+  numEsiti: 2 | 3;
+  odds: string[];    // odds[0]=Q1, odds[1]=QX o Q2, odds[2]=Q2 (se 3 esiti)
   locked: boolean;
   manualStake: string;
 }
 
 const DEFAULT_PARTITA: PartitaState = {
-  data: '',
   nome: '',
-  scommessa: '',
-  backOdds: '',
-  layOdds: '',
-  copertura: 'Banca',
-  exchange: 'betfair',
+  numEsiti: 3,
+  odds: ['', '', ''],
   locked: true,
   manualStake: '',
 };
 
-export function MultiplicatoreCalculator() {
-  // State per gli input
+export function MultiplicatoreCoperturCalculator() {
   const [mode, setMode] = useState<BetMode>('normale');
   const [numPartite, setNumPartite] = useState<number>(2);
   const [backStake, setBackStake] = useState<string>('100');
@@ -113,19 +87,12 @@ export function MultiplicatoreCalculator() {
   const [maggiorazioneTipo, setMaggiorazioneTipo] = useState<'lorda' | 'netta'>('lorda');
   const [nomeMultipla, setNomeMultipla] = useState<string>('');
   const [bookmaker, setBookmaker] = useState<string>('888sport');
-  
-  // Commissioni personalizzate (default come NinjaBet)
-  const [betfairCommission, setBetfairCommission] = useState<string>('0.045');
-  const [betflagCommission, setBetflagCommission] = useState<string>('0.05');
-  const [showCommissionDialog, setShowCommissionDialog] = useState(false);
-  
-  // State per le partite (tutto come stringhe)
+
   const [partite, setPartite] = useState<PartitaState[]>(
-    Array(5).fill(null).map(() => ({ ...DEFAULT_PARTITA }))
+    Array(5).fill(null).map(() => ({ ...DEFAULT_PARTITA, odds: ['', '', ''] }))
   );
 
-  // State UI
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
 
   // Save/Load state
   const [currentMultiplaId, setCurrentMultiplaId] = useState<number | null>(null);
@@ -136,74 +103,87 @@ export function MultiplicatoreCalculator() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Ottieni commissione per exchange
-  const getCommissionForExchange = (exchange: string): number => {
-    if (exchange === 'betfair') return parseNumericInput(betfairCommission);
-    if (exchange === 'betflag') return parseNumericInput(betflagCommission);
-    return 0;
-  };
-
-  // Handler per modificare una partita
-  const updatePartita = (index: number, field: keyof PartitaState, value: string | boolean) => {
+  const updatePartita = (index: number, field: keyof PartitaState, value: string | boolean | number) => {
     const newPartite = [...partite];
-    newPartite[index] = { ...newPartite[index], [field]: value };
+    if (field === 'numEsiti') {
+      const numEsiti = value as 2 | 3;
+      const oldOdds = newPartite[index].odds;
+      // Preserva le quote esistenti dove possibile
+      const newOdds = numEsiti === 2
+        ? [oldOdds[0], oldOdds[2] || oldOdds[1] || ''] // Q1 + Q2
+        : [oldOdds[0], '', oldOdds[1] || ''];           // Q1 + QX + Q2
+      newPartite[index] = { ...newPartite[index], numEsiti, odds: newOdds };
+    } else {
+      newPartite[index] = { ...newPartite[index], [field]: value };
+    }
     setPartite(newPartite);
   };
 
-  // Handler per input numerici con sostituzione virgola
-  const handleNumericInput = (index: number, field: 'backOdds' | 'layOdds' | 'manualStake', value: string) => {
+  const updateOdds = (partitaIdx: number, oddsIdx: number, value: string) => {
     const cleanValue = value.replace(',', '.');
-    updatePartita(index, field, cleanValue);
+    const newPartite = [...partite];
+    const newOdds = [...newPartite[partitaIdx].odds];
+    newOdds[oddsIdx] = cleanValue;
+    newPartite[partitaIdx] = { ...newPartite[partitaIdx], odds: newOdds };
+    setPartite(newPartite);
   };
 
-  // Handler per toggle lock
   const toggleLock = (index: number) => {
     const newPartite = [...partite];
-    newPartite[index] = { 
-      ...newPartite[index], 
+    newPartite[index] = {
+      ...newPartite[index],
       locked: !newPartite[index].locked,
       manualStake: '',
     };
     setPartite(newPartite);
   };
 
-  // Handler per numero partite
   const handleNumPartiteChange = (delta: number) => {
     const newNum = Math.min(5, Math.max(2, numPartite + delta));
     setNumPartite(newNum);
   };
 
-  // Handler copia
-  const handleCopy = async (value: string, idx: number) => {
+  const handleCopy = async (value: string, key: string) => {
     const success = await copyToClipboard(value);
     if (success) {
-      setCopiedIdx(idx);
+      setCopiedIdx(key);
       setTimeout(() => setCopiedIdx(null), 2000);
     }
   };
 
-  // Parse degli input per il calcolo
-  const parsedInput: MultiplicatoreInput = useMemo(() => ({
+  // Parse input per il calcolo
+  const parsedInput: MultiplicatoreCopertureInput = useMemo(() => ({
     mode,
     numPartite,
     backStake: parseNumericInput(backStake),
     backRefundStake: parseNumericInput(backRefundStake),
     partite: partite.map(p => ({
-      backOdds: parseNumericInput(p.backOdds),
-      layOdds: parseNumericInput(p.layOdds),
-      commission: getCommissionForExchange(p.exchange),
-      copertura: p.copertura,
+      numEsiti: p.numEsiti,
+      odds: p.odds.slice(0, p.numEsiti).map(o => parseNumericInput(o)),
       locked: p.locked,
       manualStake: p.manualStake ? parseNumericInput(p.manualStake) : undefined,
     })),
     maggiorazioneQuota: parseNumericInput(maggiorazioneQuota),
     maggiorazioneTipo,
-  }), [mode, numPartite, backStake, backRefundStake, partite, maggiorazioneQuota, maggiorazioneTipo, betfairCommission, betflagCommission]);
+  }), [mode, numPartite, backStake, backRefundStake, partite, maggiorazioneQuota, maggiorazioneTipo]);
 
-  // Calcolo risultati
-  const result: MultiplicatoreResult = useMemo(() => {
-    return calculateMultiplicatore(parsedInput);
+  const result: MultiplicatoreCopertureResult = useMemo(() => {
+    return calculateMultiplicatoreCoperture(parsedInput);
   }, [parsedInput]);
+
+  // Etichette esiti di copertura
+  const getCoverageLabel = (partita: PartitaState, coverageIdx: number): string => {
+    if (partita.numEsiti === 2) {
+      return '2';
+    }
+    // 3 esiti: coverageIdx 0 = X, coverageIdx 1 = 2
+    return coverageIdx === 0 ? 'X' : '2';
+  };
+
+  // Etichette colonne quote
+  const getOddsLabels = (numEsiti: 2 | 3): string[] => {
+    return numEsiti === 2 ? ['Q1', 'Q2'] : ['Q1', 'QX', 'Q2'];
+  };
 
   // Collect state for saving
   const collectState = useCallback(() => {
@@ -216,11 +196,9 @@ export function MultiplicatoreCalculator() {
       maggiorazioneTipo,
       nomeMultipla,
       bookmaker,
-      betfairCommission,
-      betflagCommission,
       partite: partite.slice(0, numPartite).map(p => ({ ...p })),
     };
-  }, [mode, numPartite, backStake, backRefundStake, maggiorazioneQuota, maggiorazioneTipo, nomeMultipla, bookmaker, betfairCommission, betflagCommission, partite]);
+  }, [mode, numPartite, backStake, backRefundStake, maggiorazioneQuota, maggiorazioneTipo, nomeMultipla, bookmaker, partite]);
 
   // Load state from saved multipla
   const loadState = useCallback((data: Record<string, any>) => {
@@ -232,16 +210,14 @@ export function MultiplicatoreCalculator() {
     if (data.maggiorazioneTipo) setMaggiorazioneTipo(data.maggiorazioneTipo);
     if (data.nomeMultipla !== undefined) setNomeMultipla(data.nomeMultipla);
     if (data.bookmaker) setBookmaker(data.bookmaker);
-    if (data.betfairCommission !== undefined) setBetfairCommission(data.betfairCommission);
-    if (data.betflagCommission !== undefined) setBetflagCommission(data.betflagCommission);
     if (data.partite && Array.isArray(data.partite)) {
       const loaded = data.partite.map((p: any) => ({
         ...DEFAULT_PARTITA,
+        odds: ['', '', ''],
         ...p,
       }));
-      // Pad to 5 if needed
       while (loaded.length < 5) {
-        loaded.push({ ...DEFAULT_PARTITA });
+        loaded.push({ ...DEFAULT_PARTITA, odds: ['', '', ''] });
       }
       setPartite(loaded);
     }
@@ -269,9 +245,8 @@ export function MultiplicatoreCalculator() {
     const stateData = collectState();
 
     if (currentMultiplaId) {
-      // Update existing
       const res = await backendAPI.updateMultipla(currentMultiplaId, {
-        calculator_type: 'multiplicatore',
+        calculator_type: 'multiplicatore-coperture',
         name: saveName,
         data: stateData,
       });
@@ -282,9 +257,8 @@ export function MultiplicatoreCalculator() {
         setSaveMessage({ type: 'error', text: res.error || 'Errore nel salvataggio' });
       }
     } else {
-      // Create new
       const res = await backendAPI.saveMultipla({
-        calculator_type: 'multiplicatore',
+        calculator_type: 'multiplicatore-coperture',
         name: saveName,
         data: stateData,
       });
@@ -308,7 +282,6 @@ export function MultiplicatoreCalculator() {
     }
   }, [saveNameInput, handleSave]);
 
-  // Formatta profitto con colore
   const ProfitDisplay = ({ value, size = 'default' }: { value: number; size?: 'default' | 'large' }) => {
     const isPositive = value >= 0;
     const formatted = isPositive ? `+${roundTo(value, 2)}` : `${roundTo(value, 2)}`;
@@ -324,7 +297,7 @@ export function MultiplicatoreCalculator() {
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-4">
+    <div className="w-full max-w-5xl mx-auto space-y-4">
       {/* Header */}
       <div className="text-center mb-6">
         <div className="inline-flex items-center gap-2 text-brand-accent mb-2">
@@ -332,10 +305,10 @@ export function MultiplicatoreCalculator() {
           <span className="text-sm font-medium uppercase tracking-wider">Calcolatore</span>
         </div>
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-          Multiplicatore
+          Multiplicatore Coperture
         </h1>
         <p className="text-gray-500 mt-1 text-sm">
-          Calcola le coperture per scommesse multiple (2-5 partite)
+          Calcola le coperture dutching per scommesse multiple (2-5 partite)
         </p>
       </div>
 
@@ -370,8 +343,8 @@ export function MultiplicatoreCalculator() {
       {/* Impostazioni Generali */}
       <Card>
         <CardContent className="p-4 space-y-4">
-          {/* Prima riga: Nome, Bookmaker, Maggiorazione, Commissione */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Prima riga */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Nome Multipla</label>
               <Input
@@ -396,7 +369,7 @@ export function MultiplicatoreCalculator() {
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Magg. Quota</label>
               <div className="flex gap-2">
-                <select 
+                <select
                   value={maggiorazioneTipo}
                   onChange={(e) => setMaggiorazioneTipo(e.target.value as 'lorda' | 'netta')}
                   className="text-xs border rounded px-2 py-2"
@@ -415,64 +388,16 @@ export function MultiplicatoreCalculator() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">&nbsp;</label>
-              <Button
-                variant="outline"
-                onClick={() => setShowCommissionDialog(!showCommissionDialog)}
-                className="w-full"
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                Commissione
-              </Button>
-            </div>
           </div>
 
-          {/* Dialog Commissioni */}
-          {showCommissionDialog && (
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-              <h4 className="font-medium text-sm">Impostazioni Commissione (%)</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600 w-32">Betfair:</label>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    value={betfairCommission}
-                    onChange={(e) => setBetfairCommission(e.target.value.replace(',', '.'))}
-                    className="w-24"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600 w-32">Betflag:</label>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    value={betflagCommission}
-                    onChange={(e) => setBetflagCommission(e.target.value.replace(',', '.'))}
-                    className="w-24"
-                  />
-                </div>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setShowCommissionDialog(false)}
-              >
-                Chiudi
-              </Button>
-            </div>
-          )}
-
-          {/* Seconda riga: Partite, Importo, Rimborso */}
+          {/* Seconda riga */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t">
-            {/* Numero Partite */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Partite</label>
               <div className="flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="icon" 
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => handleNumPartiteChange(-1)}
                   disabled={numPartite <= 2}
                   className="h-8 w-8"
@@ -480,9 +405,9 @@ export function MultiplicatoreCalculator() {
                   <Minus className="w-4 h-4" />
                 </Button>
                 <span className="text-xl font-bold w-8 text-center">{numPartite}</span>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
+                <Button
+                  variant="outline"
+                  size="icon"
                   onClick={() => handleNumPartiteChange(1)}
                   disabled={numPartite >= 5}
                   className="h-8 w-8"
@@ -492,7 +417,6 @@ export function MultiplicatoreCalculator() {
               </div>
             </div>
 
-            {/* Importo Puntata */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Importo Puntata</label>
               <Input
@@ -504,7 +428,6 @@ export function MultiplicatoreCalculator() {
               />
             </div>
 
-            {/* Importo Rimborso (solo RF) */}
             {mode === 'riskfree' && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">Importo Rimborso</label>
@@ -518,7 +441,6 @@ export function MultiplicatoreCalculator() {
               </div>
             )}
 
-            {/* Rating Medio */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
                 {mode === 'riskfree' ? 'RF Medio' : 'Rating Medio'}
@@ -528,7 +450,6 @@ export function MultiplicatoreCalculator() {
               </div>
             </div>
 
-            {/* Guadagno Medio */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Guadagno Medio</label>
               <div className="h-10 flex items-center">
@@ -546,158 +467,183 @@ export function MultiplicatoreCalculator() {
             <table className="w-full text-sm">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[140px]">Data</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Partite</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[100px]">Scommessa</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 w-8">#</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">Partita</th>
+                  <th className="px-2 py-2 text-center font-medium text-gray-600 w-20">Esiti</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Q1</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">QX</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Q2</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8"></th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[80px]">Copertura</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[80px]">Quota Punta</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[80px]">Quota Banca/P2</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[110px]">Exchange/Book2</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[60px]">Com</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[100px]">Banca/Punta2</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Resp</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Puntate Copertura</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Resp.</th>
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: numPartite }, (_, i) => (
-                  <tr key={i} className="border-t hover:bg-gray-50">
-                    {/* Data */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        value={partite[i].data}
-                        onChange={(e) => updatePartita(i, 'data', e.target.value)}
-                        placeholder="GG/MM/AAAA HH:MM"
-                        className="text-xs"
-                      />
-                    </td>
-                    {/* Nome Partita */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        value={partite[i].nome}
-                        onChange={(e) => updatePartita(i, 'nome', e.target.value)}
-                        placeholder="Es. Juve - Inter"
-                        className="text-xs"
-                      />
-                    </td>
-                    {/* Scommessa */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        value={partite[i].scommessa}
-                        onChange={(e) => updatePartita(i, 'scommessa', e.target.value)}
-                        placeholder="Es. 1X2"
-                        className="text-xs"
-                      />
-                    </td>
-                    {/* Lock */}
-                    <td className="px-2 py-2">
-                      <button
-                        onClick={() => toggleLock(i)}
-                        className={cn(
-                          "p-1 rounded",
-                          partite[i].locked ? "text-green-600" : "text-gray-400"
-                        )}
-                        title={partite[i].locked ? "Bloccato (auto)" : "Sbloccato (manuale)"}
-                      >
-                        {partite[i].locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                      </button>
-                    </td>
-                    {/* Copertura */}
-                    <td className="px-2 py-2">
-                      <select
-                        value={partite[i].copertura}
-                        onChange={(e) => updatePartita(i, 'copertura', e.target.value)}
-                        className="border rounded px-2 py-1 text-xs w-full"
-                      >
-                        <option value="Banca">Banca</option>
-                        <option value="Punta2">Punta 2</option>
-                      </select>
-                    </td>
-                    {/* Quota Punta */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={partite[i].backOdds}
-                        onChange={(e) => handleNumericInput(i, 'backOdds', e.target.value)}
-                        placeholder="0.00"
-                        className="w-20 text-xs"
-                      />
-                    </td>
-                    {/* Quota Banca/P2 */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={partite[i].layOdds}
-                        onChange={(e) => handleNumericInput(i, 'layOdds', e.target.value)}
-                        placeholder="0.00"
-                        className="w-20 text-xs"
-                      />
-                    </td>
-                    {/* Exchange */}
-                    <td className="px-2 py-2">
-                      <select
-                        value={partite[i].exchange}
-                        onChange={(e) => updatePartita(i, 'exchange', e.target.value)}
-                        className="border rounded px-1 py-1 text-xs w-full"
-                      >
-                        {EXCHANGES.map(ex => (
-                          <option key={ex.value} value={ex.value} disabled={ex.value === '-'}>
-                            {ex.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    {/* Commissione */}
-                    <td className="px-2 py-2">
-                      <Input
-                        type="text"
-                        value={getCommissionForExchange(partite[i].exchange).toString()}
-                        readOnly
-                        className="w-16 text-xs bg-gray-50"
-                      />
-                    </td>
-                    {/* Stake */}
-                    <td className="px-2 py-2">
-                      <div className="flex items-center gap-1">
-                        {partite[i].locked ? (
-                          <span className="font-medium text-xs w-16">{result.partiteResults[i]?.stake || 0}</span>
-                        ) : (
+                {Array.from({ length: numPartite }, (_, i) => {
+                  const p = partite[i];
+                  const pr = result.partiteResults[i];
+                  const labels = getOddsLabels(p.numEsiti);
+
+                  return (
+                    <tr key={i} className="border-t hover:bg-gray-50">
+                      {/* # */}
+                      <td className="px-2 py-2 text-center font-medium text-gray-500">
+                        {i + 1}
+                      </td>
+                      {/* Nome Partita */}
+                      <td className="px-2 py-2">
+                        <Input
+                          type="text"
+                          value={p.nome}
+                          onChange={(e) => updatePartita(i, 'nome', e.target.value)}
+                          placeholder="Es. Juve - Inter"
+                          className="text-xs"
+                        />
+                      </td>
+                      {/* Esiti 2/3 */}
+                      <td className="px-2 py-2">
+                        <div className="flex gap-1 justify-center">
+                          <button
+                            onClick={() => updatePartita(i, 'numEsiti', 2)}
+                            className={cn(
+                              "px-2 py-1 rounded text-xs font-medium transition-colors",
+                              p.numEsiti === 2
+                                ? "bg-brand-accent text-brand-primary"
+                                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                            )}
+                          >
+                            2
+                          </button>
+                          <button
+                            onClick={() => updatePartita(i, 'numEsiti', 3)}
+                            className={cn(
+                              "px-2 py-1 rounded text-xs font-medium transition-colors",
+                              p.numEsiti === 3
+                                ? "bg-brand-accent text-brand-primary"
+                                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                            )}
+                          >
+                            3
+                          </button>
+                        </div>
+                      </td>
+                      {/* Q1 */}
+                      <td className="px-2 py-2">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={p.odds[0]}
+                          onChange={(e) => updateOdds(i, 0, e.target.value)}
+                          placeholder={labels[0]}
+                          className="w-[70px] text-xs"
+                        />
+                      </td>
+                      {/* QX (solo se 3 esiti) */}
+                      <td className="px-2 py-2">
+                        {p.numEsiti === 3 ? (
                           <Input
                             type="text"
                             inputMode="decimal"
-                            value={partite[i].manualStake}
-                            onChange={(e) => handleNumericInput(i, 'manualStake', e.target.value)}
-                            placeholder="0"
-                            className="w-16 text-xs bg-yellow-50"
+                            value={p.odds[1]}
+                            onChange={(e) => updateOdds(i, 1, e.target.value)}
+                            placeholder="QX"
+                            className="w-[70px] text-xs"
                           />
+                        ) : (
+                          <span className="text-gray-300 text-xs">-</span>
                         )}
+                      </td>
+                      {/* Q2 */}
+                      <td className="px-2 py-2">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={p.numEsiti === 2 ? p.odds[1] : p.odds[2]}
+                          onChange={(e) => updateOdds(i, p.numEsiti === 2 ? 1 : 2, e.target.value)}
+                          placeholder="Q2"
+                          className="w-[70px] text-xs"
+                        />
+                      </td>
+                      {/* Lock */}
+                      <td className="px-2 py-2">
                         <button
-                          onClick={() => handleCopy(String(result.partiteResults[i]?.stake || 0), i)}
-                          className="p-1 hover:bg-gray-100 rounded"
-                          title="Copia"
+                          onClick={() => toggleLock(i)}
+                          className={cn(
+                            "p-1 rounded",
+                            p.locked ? "text-green-600" : "text-gray-400"
+                          )}
+                          title={p.locked ? "Bloccato (auto)" : "Sbloccato (manuale)"}
                         >
-                          {copiedIdx === i ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3 text-gray-400" />}
+                          {p.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                         </button>
-                      </div>
-                    </td>
-                    {/* Responsabilità */}
-                    <td className="px-2 py-2 font-medium text-lay text-xs">
-                      {result.partiteResults[i]?.liability || 0}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      {/* Puntate Copertura */}
+                      <td className="px-2 py-2">
+                        {p.locked ? (
+                          <div className="space-y-1">
+                            {pr?.coverageStakes.map((stake, j) => (
+                              <div key={j} className="flex items-center gap-1">
+                                <span className="text-xs text-gray-500 w-10">
+                                  Punta {getCoverageLabel(p, j)}:
+                                </span>
+                                <span className="font-medium text-xs">{stake}</span>
+                                <button
+                                  onClick={() => handleCopy(String(stake), `${i}-${j}`)}
+                                  className="p-0.5 hover:bg-gray-100 rounded"
+                                  title="Copia"
+                                >
+                                  {copiedIdx === `${i}-${j}` ? (
+                                    <Check className="w-3 h-3 text-green-600" />
+                                  ) : (
+                                    <Copy className="w-3 h-3 text-gray-400" />
+                                  )}
+                                </button>
+                              </div>
+                            ))}
+                            {pr && (
+                              <div className="text-[10px] text-gray-400 pt-0.5">
+                                Tot: {pr.totalCoverageStake}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Tot:</span>
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                value={p.manualStake}
+                                onChange={(e) => {
+                                  const cleanValue = e.target.value.replace(',', '.');
+                                  updatePartita(i, 'manualStake', cleanValue);
+                                }}
+                                placeholder="0"
+                                className="w-20 text-xs bg-yellow-50"
+                              />
+                            </div>
+                            {pr?.coverageStakes.map((stake, j) => (
+                              <div key={j} className="text-[10px] text-gray-400">
+                                Punta {getCoverageLabel(p, j)}: {stake}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      {/* Responsabilità */}
+                      <td className="px-2 py-2 font-medium text-lay text-xs">
+                        {pr?.liability || 0}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {/* Riga totali */}
                 <tr className="border-t bg-gray-50 font-medium">
-                  <td colSpan={5} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
-                  <td className="px-2 py-2 text-xs text-back font-bold">{result.totalBackOdds}</td>
-                  <td colSpan={3}></td>
+                  <td colSpan={3} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
+                  <td className="px-2 py-2 text-xs text-back font-bold" colSpan={3}>{result.totalBackOdds}</td>
+                  <td></td>
                   <td className="px-2 py-2 text-right text-xs">Resp. Totale:</td>
-                  <td className="px-2 py-2 text-xs text-lay font-bold">{result.totalLiability}€</td>
+                  <td className="px-2 py-2 text-xs text-lay font-bold">{result.totalLiability}&euro;</td>
                 </tr>
               </tbody>
             </table>
@@ -791,7 +737,7 @@ export function MultiplicatoreCalculator() {
       <SavedMultipleDialog
         open={showSavedDialog}
         onOpenChange={setShowSavedDialog}
-        calculatorType="multiplicatore"
+        calculatorType="multiplicatore-coperture"
         onLoad={handleLoadMultipla}
       />
 
@@ -804,7 +750,7 @@ export function MultiplicatoreCalculator() {
               Inserisci un nome per la multipla.
             </DialogDescription>
           </DialogHeader>
-          <Input
+          <DialogInput
             type="text"
             value={saveNameInput}
             onChange={(e) => setSaveNameInput(e.target.value)}
@@ -833,7 +779,10 @@ export function MultiplicatoreCalculator() {
           <strong>P</strong> = Prima partita persa | <strong>VP</strong> = Prima vinta, seconda persa | etc.
         </p>
         <p>
-          <strong>Lock/Unlock</strong>: Sblocca per inserire stake manuale
+          <strong>Lock/Unlock</strong>: Sblocca per inserire stake totale copertura manuale
+        </p>
+        <p>
+          Le coperture sono calcolate con il metodo <strong>dutching</strong> (punta-punta): ogni esito di copertura garantisce lo stesso ritorno.
         </p>
       </div>
     </div>

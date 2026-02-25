@@ -40,6 +40,8 @@ const protectedNavigation: NavItem[] = [
       { name: 'Punta-Banca', href: '/calcolatori/punta-banca' },
       { name: 'Punta-Punta', href: '/calcolatori/punta-punta' },
       { name: 'Multiplicatore', href: '/calcolatori/multiplicatore' },
+      { name: 'Mult. Coperture', href: '/calcolatori/multiplicatore-coperture' },
+      { name: 'Fun Bonus', href: '/calcolatori/fun-bonus' },
     ]
   },
 ];
