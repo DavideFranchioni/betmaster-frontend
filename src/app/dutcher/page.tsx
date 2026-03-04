@@ -783,9 +783,11 @@ export default function DutcherPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
   // Filters
-  const [selectedBookmakers1, setSelectedBookmakers1] = useState<string[]>(Object.keys(BOOKMAKERS));
-  const [selectedBookmakers2, setSelectedBookmakers2] = useState<string[]>(Object.keys(BOOKMAKERS));
-  const [selectedBookmakers3, setSelectedBookmakers3] = useState<string[]>(Object.keys(BOOKMAKERS));
+  const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20'];
+  const [presetBookmakers, setPresetBookmakers] = useState<'tutti' | 'nostri'>('nostri');
+  const [selectedBookmakers1, setSelectedBookmakers1] = useState<string[]>(NOSTRI_BOOKMAKERS);
+  const [selectedBookmakers2, setSelectedBookmakers2] = useState<string[]>(NOSTRI_BOOKMAKERS);
+  const [selectedBookmakers3, setSelectedBookmakers3] = useState<string[]>(NOSTRI_BOOKMAKERS);
   const [selectedSports, setSelectedSports] = useState<string[]>(Object.keys(SPORTS));
   const [selectedBetTypes, setSelectedBetTypes] = useState<string[]>(Object.keys(BET_TYPES));
   
@@ -1210,14 +1212,55 @@ export default function DutcherPage() {
             {activeFilters && <Button variant="outline" size="sm" onClick={clearFilters}><X size={14} /><span className="ml-1 hidden sm:inline">Cancella filtri</span></Button>}
           </div>
 
-          {/* Inline Filters Row 1 */}
-          <div className="flex flex-wrap items-center gap-2 justify-center mb-2">
-            <MultiSelect options={sportNames} selected={selectedSports} onChange={setSelectedSports} placeholder="Filtra Sport" allLabel="Tutti" showIcons icons={sportIcons} />
-            <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers1} onChange={setSelectedBookmakers1} placeholder="Filtra Bookmaker 1" allLabel="Tutti" />
+          {/* Filters Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end max-w-7xl mx-auto">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Preset</span>
+              <select
+                value={presetBookmakers}
+                onChange={(e) => {
+                  const value = e.target.value as 'tutti' | 'nostri';
+                  setPresetBookmakers(value);
+                  if (value === 'nostri') {
+                    setSelectedBookmakers1(NOSTRI_BOOKMAKERS);
+                    setSelectedBookmakers2(NOSTRI_BOOKMAKERS);
+                    setSelectedBookmakers3(NOSTRI_BOOKMAKERS);
+                  } else {
+                    setSelectedBookmakers1(Object.keys(BOOKMAKERS));
+                    setSelectedBookmakers2(Object.keys(BOOKMAKERS));
+                    setSelectedBookmakers3(Object.keys(BOOKMAKERS));
+                  }
+                }}
+                className="border rounded-md px-2 py-1.5 text-sm bg-white h-9"
+              >
+                <option value="tutti">Tutti</option>
+                <option value="nostri">Nostri</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Sport</span>
+              <MultiSelect options={sportNames} selected={selectedSports} onChange={setSelectedSports} placeholder="Sport" allLabel="Tutti" showIcons icons={sportIcons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Scommessa</span>
+              <MultiSelect options={BET_TYPES} selected={selectedBetTypes} onChange={setSelectedBetTypes} placeholder="Scommessa" allLabel="Tutte" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Bookmaker 1</span>
+              <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers1} onChange={setSelectedBookmakers1} placeholder="Book 1" allLabel="Tutti" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Bookmaker 2</span>
+              <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers2} onChange={setSelectedBookmakers2} placeholder="Book 2" allLabel="Tutti" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Bookmaker 3</span>
+              <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers3} onChange={setSelectedBookmakers3} placeholder="Book 3" allLabel="Tutti" />
+            </div>
           </div>
 
-          {/* Inline Filters Row 2 */}
-          <div className="flex flex-wrap items-start gap-2 justify-center mb-2">
+          {/* Search & Actions Row */}
+          <div className="flex flex-wrap items-end gap-3 justify-center mt-3">
             <div className="w-[220px]">
               <EventAutocomplete
                 placeholder="Cerca partita/competizione"
@@ -1234,14 +1277,7 @@ export default function DutcherPage() {
                 variant="hide"
               />
             </div>
-            <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers2} onChange={setSelectedBookmakers2} placeholder="Filtra Bookmaker 2" allLabel="Tutti" />
-            <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers3} onChange={setSelectedBookmakers3} placeholder="Filtra Bookmaker 3" allLabel="Tutti" />
-          </div>
-
-          {/* Inline Filters Row 3 */}
-          <div className="flex flex-wrap items-center gap-2 justify-center">
-            <MultiSelect options={BET_TYPES} selected={selectedBetTypes} onChange={setSelectedBetTypes} placeholder="Filtra Scommessa" allLabel="Tutte" />
-            <Button onClick={fetchEvents} size="sm" className="bg-emerald-500 hover:bg-emerald-600">Applica</Button>
+            <Button onClick={fetchEvents} size="sm" className="bg-emerald-500 hover:bg-emerald-600 h-9 px-6">Applica</Button>
           </div>
         </div>
       </div>

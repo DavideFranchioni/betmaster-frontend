@@ -60,6 +60,8 @@ export function calculateFunBonus(input: FunBonusInput): FunBonusResult {
   } else {
     puntataBigWin = bonus / 100 * (altaVarianza ? 5 : 8);
   }
+  // Scala la puntata in base al rollover rimanente
+  puntataBigWin = puntataBigWin * (100 - saldoGiocatoPerc) / 100;
 
   // 4. Puntata Rollover
   const puntataRollover = bonus / 1000;

@@ -803,23 +803,35 @@ export default function OddsMatcherPage() {
             {activeFilters && <Button variant="outline" size="sm" onClick={clearFilters}><X size={14} /></Button>}
           </div>
 
-          {/* Inline Filters Row 1 */}
-          <div className="flex flex-wrap items-center gap-2 justify-center mb-2">
-            <MultiSelect options={sportNames} selected={selectedSports} onChange={setSelectedSports} placeholder="Filtra Sport" allLabel="Tutti gli sport" showIcons icons={sportIcons} />
-            <MultiSelect options={BET_TYPES} selected={selectedBetTypes} onChange={setSelectedBetTypes} placeholder="Filtra Scommessa" allLabel="Tutte" />
-            <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers} onChange={setSelectedBookmakers} placeholder="Filtra Bookmaker" allLabel="Tutti" />
-            <Select value={exchange} onValueChange={(v) => { setExchange(v); setCurrentPage(1); }}>
-              <SelectTrigger className="w-[120px] bg-white text-sm"><SelectValue placeholder="Exchange" /></SelectTrigger>
-              <SelectContent className="bg-white">
-                <SelectItem value="all">Tutti</SelectItem>
-                <SelectItem value="betfair">Betfair</SelectItem>
-                <SelectItem value="betflag">Betflag</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Filters Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end mb-3 max-w-3xl mx-auto">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Sport</span>
+              <MultiSelect options={sportNames} selected={selectedSports} onChange={setSelectedSports} placeholder="Sport" allLabel="Tutti" showIcons icons={sportIcons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Scommessa</span>
+              <MultiSelect options={BET_TYPES} selected={selectedBetTypes} onChange={setSelectedBetTypes} placeholder="Scommessa" allLabel="Tutte" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Bookmaker</span>
+              <MultiSelect options={BOOKMAKERS} selected={selectedBookmakers} onChange={setSelectedBookmakers} placeholder="Bookmaker" allLabel="Tutti" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Exchange</span>
+              <Select value={exchange} onValueChange={(v) => { setExchange(v); setCurrentPage(1); }}>
+                <SelectTrigger className="bg-white text-sm h-9"><SelectValue placeholder="Exchange" /></SelectTrigger>
+                <SelectContent className="bg-white">
+                  <SelectItem value="all">Tutti</SelectItem>
+                  <SelectItem value="betfair">Betfair</SelectItem>
+                  <SelectItem value="betflag">Betflag</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Inline Filters Row 2 - Event Search */}
-          <div className="flex flex-wrap items-start gap-2 justify-center">
+          {/* Search Row */}
+          <div className="flex flex-wrap items-end gap-3 justify-center">
             <div className="w-[220px]">
               <EventAutocomplete
                 placeholder="Cerca partita/competizione"

@@ -89,7 +89,7 @@ export function MultiplicatoreCoperturCalculator() {
   const [bookmaker, setBookmaker] = useState<string>('888sport');
 
   const [partite, setPartite] = useState<PartitaState[]>(
-    Array(5).fill(null).map(() => ({ ...DEFAULT_PARTITA, odds: ['', '', ''] }))
+    Array(10).fill(null).map(() => ({ ...DEFAULT_PARTITA, odds: ['', '', ''] }))
   );
 
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
@@ -139,7 +139,7 @@ export function MultiplicatoreCoperturCalculator() {
   };
 
   const handleNumPartiteChange = (delta: number) => {
-    const newNum = Math.min(5, Math.max(2, numPartite + delta));
+    const newNum = Math.min(10, Math.max(2, numPartite + delta));
     setNumPartite(newNum);
   };
 
@@ -174,15 +174,15 @@ export function MultiplicatoreCoperturCalculator() {
   // Etichette esiti di copertura
   const getCoverageLabel = (partita: PartitaState, coverageIdx: number): string => {
     if (partita.numEsiti === 2) {
-      return '2';
+      return 'Cop. 1';
     }
-    // 3 esiti: coverageIdx 0 = X, coverageIdx 1 = 2
-    return coverageIdx === 0 ? 'X' : '2';
+    // 3 esiti: coverageIdx 0 = Cop. 1, coverageIdx 1 = Cop. 2
+    return coverageIdx === 0 ? 'Cop. 1' : 'Cop. 2';
   };
 
   // Etichette colonne quote
   const getOddsLabels = (numEsiti: 2 | 3): string[] => {
-    return numEsiti === 2 ? ['Q1', 'Q2'] : ['Q1', 'QX', 'Q2'];
+    return numEsiti === 2 ? ['Q. multipla', 'Cop. 1'] : ['Q. multipla', 'Cop. 1', 'Cop. 2'];
   };
 
   // Collect state for saving
@@ -216,7 +216,7 @@ export function MultiplicatoreCoperturCalculator() {
         odds: ['', '', ''],
         ...p,
       }));
-      while (loaded.length < 5) {
+      while (loaded.length < 10) {
         loaded.push({ ...DEFAULT_PARTITA, odds: ['', '', ''] });
       }
       setPartite(loaded);
@@ -308,7 +308,7 @@ export function MultiplicatoreCoperturCalculator() {
           Multiplicatore Coperture
         </h1>
         <p className="text-gray-500 mt-1 text-sm">
-          Calcola le coperture dutching per scommesse multiple (2-5 partite)
+          Calcola le coperture dutching per scommesse multiple (2-10 partite)
         </p>
       </div>
 
@@ -409,7 +409,7 @@ export function MultiplicatoreCoperturCalculator() {
                   variant="outline"
                   size="icon"
                   onClick={() => handleNumPartiteChange(1)}
-                  disabled={numPartite >= 5}
+                  disabled={numPartite >= 10}
                   className="h-8 w-8"
                 >
                   <Plus className="w-4 h-4" />
@@ -470,9 +470,9 @@ export function MultiplicatoreCoperturCalculator() {
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8">#</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">Partita</th>
                   <th className="px-2 py-2 text-center font-medium text-gray-600 w-20">Esiti</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Q1</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">QX</th>
-                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Q2</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Quota multipla</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Copertura 1</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Copertura 2</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8"></th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Puntate Copertura</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Resp.</th>
@@ -546,7 +546,7 @@ export function MultiplicatoreCoperturCalculator() {
                             inputMode="decimal"
                             value={p.odds[1]}
                             onChange={(e) => updateOdds(i, 1, e.target.value)}
-                            placeholder="QX"
+                            placeholder="Cop. 1"
                             className="w-[70px] text-xs"
                           />
                         ) : (
@@ -560,7 +560,7 @@ export function MultiplicatoreCoperturCalculator() {
                           inputMode="decimal"
                           value={p.numEsiti === 2 ? p.odds[1] : p.odds[2]}
                           onChange={(e) => updateOdds(i, p.numEsiti === 2 ? 1 : 2, e.target.value)}
-                          placeholder="Q2"
+                          placeholder={p.numEsiti === 2 ? "Cop. 1" : "Cop. 2"}
                           className="w-[70px] text-xs"
                         />
                       </td>
@@ -584,7 +584,7 @@ export function MultiplicatoreCoperturCalculator() {
                             {pr?.coverageStakes.map((stake, j) => (
                               <div key={j} className="flex items-center gap-1">
                                 <span className="text-xs text-gray-500 w-10">
-                                  Punta {getCoverageLabel(p, j)}:
+                                  {getCoverageLabel(p, j)}:
                                 </span>
                                 <span className="font-medium text-xs">{stake}</span>
                                 <button
@@ -624,7 +624,7 @@ export function MultiplicatoreCoperturCalculator() {
                             </div>
                             {pr?.coverageStakes.map((stake, j) => (
                               <div key={j} className="text-[10px] text-gray-400">
-                                Punta {getCoverageLabel(p, j)}: {stake}
+                                {getCoverageLabel(p, j)}: {stake}
                               </div>
                             ))}
                           </div>

@@ -310,8 +310,8 @@ export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureI
 export function validateMultiplicatoreCopertureInput(input: Partial<MultiplicatoreCopertureInput>): string[] {
   const errors: string[] = [];
 
-  if (input.numPartite !== undefined && (input.numPartite < 2 || input.numPartite > 5)) {
-    errors.push('Il numero di partite deve essere tra 2 e 5');
+  if (input.numPartite !== undefined && (input.numPartite < 2 || input.numPartite > 10)) {
+    errors.push('Il numero di partite deve essere tra 2 e 10');
   }
 
   if (input.backStake !== undefined && input.backStake <= 0) {
