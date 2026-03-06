@@ -25,12 +25,34 @@ export interface PartitaCopertura {
 
 export interface MultiplicatoreCopertureInput {
   mode: BetMode;
+  subMode?: 'standard' | 'perdi1';
   numPartite: number;
   backStake: number;
   backRefundStake?: number;
+  rimborsoPerdi1?: number;
   partite: PartitaCopertura[];
   maggiorazioneQuota?: number;
   maggiorazioneTipo?: 'lorda' | 'netta';
+}
+
+export interface CoverageTreeLeaf {
+  type: 'leaf';
+  profit: number;
+  rating: number;
+  lossCount: number;
+  hasRefund: boolean;
+  scenario: string;
+}
+
+export interface CoverageTreeNode {
+  type: 'node';
+  eventIndex: number;
+  eventName: string;
+  coverageStake: number;
+  coverageStakes: number[];
+  coverageProfit: number;
+  win: CoverageTreeNode | CoverageTreeLeaf;
+  lose: CoverageTreeNode | CoverageTreeLeaf;
 }
 
 export interface PartitaCoperturResult {
@@ -55,6 +77,7 @@ export interface MultiplicatoreCopertureResult {
   scenari: ScenarioCoperturResult[];
   ratingMedio: number;
   guadagnoMedio: number;
+  tree?: CoverageTreeNode;
 }
 
 export function roundTo(num: number, decimals: number): number {
@@ -71,7 +94,301 @@ function calcEffectiveOdds(coverageOdds: number[]): number {
   return sumInverse > 0 ? 1 / sumInverse : 0;
 }
 
+/**
+ * Calcola lo split dutching degli stake individuali dato uno stake totale.
+ */
+function splitDutching(totalStake: number, coverageOdds: number[], effOdds: number): number[] {
+  return coverageOdds.map(odd => {
+    if (odd > 0 && effOdds > 0) {
+      return roundTo(totalStake * effOdds / odd, 2);
+    }
+    return 0;
+  });
+}
+
+/**
+ * PERDI 1: algoritmo ricorsivo per calcolo albero coperture.
+ * Se esattamente 1 evento perde → rimborso. Altrimenti multipla vince o perdi >1.
+ */
+export function calculatePerdi1Tree(input: MultiplicatoreCopertureInput): MultiplicatoreCopertureResult {
+  const {
+    numPartite,
+    backStake,
+    partite,
+    rimborsoPerdi1 = 0,
+    maggiorazioneQuota = 0,
+    maggiorazioneTipo = 'lorda',
+  } = input;
+
+  // Calcola effectiveOdds per ogni partita
+  const effectiveOddsArray: number[] = [];
+  for (let i = 0; i < numPartite; i++) {
+    const coverageOdds = partite[i].odds.slice(1);
+    effectiveOddsArray.push(calcEffectiveOdds(coverageOdds));
+  }
+
+  // Quota totale multipla
+  let totalBackExact = 1;
+  for (let i = 0; i < numPartite; i++) {
+    totalBackExact *= partite[i].odds[0];
+  }
+  const totalBack = roundTo(totalBackExact, 2);
+
+  // Quote maggiorate
+  const maggQuota = maggiorazioneQuota / 100;
+  const maggOddsArray: number[] = [];
+  let totalMaggExact = 1;
+  for (let i = 0; i < numPartite; i++) {
+    let maggOdds = partite[i].odds[0];
+    if (maggQuota > 0) {
+      if (maggiorazioneTipo === 'netta') {
+        maggOdds = partite[i].odds[0] * Math.pow(
+          ((totalBackExact - 1) * (1 + maggQuota) + 1) / totalBackExact,
+          1 / numPartite
+        );
+      } else {
+        maggOdds = partite[i].odds[0] * Math.pow(1 + maggQuota, 1 / numPartite);
+      }
+      totalMaggExact *= maggOdds;
+    } else {
+      totalMaggExact = totalBackExact;
+    }
+    maggOddsArray.push(roundTo(maggOdds, 2));
+  }
+  const totalMagg = roundTo(totalMaggExact, 2);
+  const quotaPerVV = maggQuota > 0 ? totalMaggExact : totalBackExact;
+
+  // Recursive solve: returns the equalized profit for this subtree
+  interface SolveResult {
+    profit: number;
+    node: CoverageTreeNode | CoverageTreeLeaf;
+  }
+
+  function solve(eventIdx: number, lossesSoFar: number, scenarioPrefix: string): SolveResult {
+    if (eventIdx >= numPartite) {
+      // Leaf
+      let profit: number;
+      if (lossesSoFar === 0) {
+        // All events won → multipla wins
+        profit = backStake * (quotaPerVV - 1);
+      } else if (lossesSoFar === 1) {
+        // Exactly 1 lost → refund applies
+        profit = -backStake + rimborsoPerdi1;
+      } else {
+        // 2+ lost → no refund
+        profit = -backStake;
+      }
+      profit = roundTo(profit, 2);
+
+      const rating = rimborsoPerdi1 > 0 ? roundTo((profit / rimborsoPerdi1) * 100, 2) : 0;
+
+      const leaf: CoverageTreeLeaf = {
+        type: 'leaf',
+        profit,
+        rating,
+        lossCount: lossesSoFar,
+        hasRefund: lossesSoFar === 1,
+        scenario: scenarioPrefix,
+      };
+      return { profit, node: leaf };
+    }
+
+    // Recurse: lose branch (event loses in multipla → coverage wins)
+    const loseResult = solve(eventIdx + 1, lossesSoFar + 1, scenarioPrefix + 'P');
+    // Recurse: win branch (event wins in multipla → coverage loses)
+    const winResult = solve(eventIdx + 1, lossesSoFar, scenarioPrefix + 'V');
+
+    const effOdds = effectiveOddsArray[eventIdx];
+
+    // Calculate coverage stake to equalize profits
+    // When coverage wins: profit = coverageStake * (effOdds - 1) + loseResult.profit - cumulative_liabilities
+    // When coverage loses: profit = -coverageStake + winResult.profit
+    // Equalize: coverageStake * (effOdds - 1) + loseResult.profit = -coverageStake + winResult.profit
+    // coverageStake * effOdds = winResult.profit - loseResult.profit
+    let coverageStake = 0;
+    if (effOdds > 0) {
+      coverageStake = roundTo((winResult.profit - loseResult.profit) / effOdds, 0);
+    }
+
+    // Equalized profit: -coverageStake + winResult.profit (choosing the win branch formula)
+    const equalizedProfit = roundTo(-coverageStake + winResult.profit, 2);
+
+    // Profit when coverage wins (event loses in multipla)
+    const coverageProfit = roundTo(coverageStake * (effOdds - 1), 2);
+
+    // Split dutching
+    const coverageOdds = partite[eventIdx].odds.slice(1);
+    const individualStakes = splitDutching(coverageStake, coverageOdds, effOdds);
+
+    const eventName = `Evento ${eventIdx + 1}`;
+
+    const node: CoverageTreeNode = {
+      type: 'node',
+      eventIndex: eventIdx,
+      eventName,
+      coverageStake,
+      coverageStakes: individualStakes,
+      coverageProfit,
+      win: winResult.node,
+      lose: loseResult.node,
+    };
+
+    return { profit: equalizedProfit, node };
+  }
+
+  const rootResult = solve(0, 0, '');
+  const tree = rootResult.node as CoverageTreeNode;
+
+  // Post-processing: propagate net coverage costs to leaves.
+  // At each node, win branch pays -coverageStake (coverage loses),
+  // lose branch gains +coverageProfit (coverage wins).
+  function propagateNetProfits(node: CoverageTreeNode | CoverageTreeLeaf, pathCost: number) {
+    if (node.type === 'leaf') {
+      node.profit = roundTo(node.profit + pathCost, 2);
+      node.rating = rimborsoPerdi1 > 0 ? roundTo((node.profit / rimborsoPerdi1) * 100, 2) : 0;
+      return;
+    }
+    // Win branch: event wins in multipla → coverage loses → we pay coverageStake
+    propagateNetProfits(node.win, pathCost - node.coverageStake);
+    // Lose branch: event loses in multipla → coverage wins → we gain coverageProfit
+    propagateNetProfits(node.lose, pathCost + node.coverageProfit);
+  }
+  propagateNetProfits(tree, 0);
+
+  // Collect all leaves for statistics (after net profit correction)
+  const leaves: CoverageTreeLeaf[] = [];
+  function collectLeaves(node: CoverageTreeNode | CoverageTreeLeaf) {
+    if (node.type === 'leaf') {
+      leaves.push(node);
+    } else {
+      collectLeaves(node.win);
+      collectLeaves(node.lose);
+    }
+  }
+  collectLeaves(tree);
+
+  const totalGuadagno = leaves.reduce((sum, l) => sum + l.profit, 0);
+  const guadagnoMedio = roundTo(totalGuadagno / leaves.length, 2);
+  const ratingMedio = rimborsoPerdi1 > 0 ? roundTo((guadagnoMedio / rimborsoPerdi1) * 100, 2) : 0;
+
+  // Max coverage: sum of all stakes on the most expensive path
+  function maxCoveragePath(node: CoverageTreeNode | CoverageTreeLeaf): number {
+    if (node.type === 'leaf') return 0;
+    const winPath = node.coverageStake + maxCoveragePath(node.win);
+    const losePath = node.coverageStake + maxCoveragePath(node.lose);
+    return Math.max(winPath, losePath);
+  }
+  const totalLiability = roundTo(maxCoveragePath(tree), 2);
+
+  // Build scenari from leaves for compatibility
+  const scenari: ScenarioCoperturResult[] = leaves.map(l => ({
+    nome: l.scenario,
+    guadagno: l.profit,
+    rating: l.rating,
+  }));
+
+  // Populate partiteResults from the "all-win" path of the tree
+  // (the principal path with the largest coverage stakes)
+  const partiteResults: PartitaCoperturResult[] = [];
+  let current: CoverageTreeNode | CoverageTreeLeaf = tree;
+  for (let i = 0; i < numPartite; i++) {
+    if (current.type === 'node') {
+      partiteResults.push({
+        effectiveOdds: roundTo(effectiveOddsArray[i], 4),
+        totalCoverageStake: current.coverageStake,
+        coverageStakes: current.coverageStakes,
+        liability: current.coverageStake,
+        maggOdds: maggOddsArray[i],
+      });
+      current = current.win; // follow the win path
+    } else {
+      partiteResults.push({
+        effectiveOdds: roundTo(effectiveOddsArray[i], 4),
+        totalCoverageStake: 0,
+        coverageStakes: [],
+        liability: 0,
+        maggOdds: maggOddsArray[i],
+      });
+    }
+  }
+
+  return {
+    partiteResults,
+    totalBackOdds: totalBack,
+    totalMaggOdds: totalMagg,
+    totalLiability,
+    scenari,
+    ratingMedio,
+    guadagnoMedio,
+    tree,
+  };
+}
+
+/**
+ * Converts existing linear scenario results into a degenerate tree for visualization.
+ * Each node: lose = leaf (scenario P at that level), win = next node.
+ */
+function buildStandardTree(
+  result: MultiplicatoreCopertureResult,
+  input: MultiplicatoreCopertureInput,
+): CoverageTreeNode | undefined {
+  const { numPartite } = input;
+  if (numPartite < 2 || result.scenari.length === 0) return undefined;
+
+  // Build from last event to first (bottom-up)
+  // scenari[0] = P, scenari[1] = VP, ..., scenari[N] = VV..V
+  function buildNode(eventIdx: number): CoverageTreeNode {
+    const pr = result.partiteResults[eventIdx];
+    const scenario = result.scenari[eventIdx]; // scenario where event eventIdx loses
+
+    const loseLeaf: CoverageTreeLeaf = {
+      type: 'leaf',
+      profit: scenario.guadagno,
+      rating: scenario.rating,
+      lossCount: 1,
+      hasRefund: false,
+      scenario: scenario.nome,
+    };
+
+    let winChild: CoverageTreeNode | CoverageTreeLeaf;
+    if (eventIdx === numPartite - 1) {
+      // Last event: win = all events won
+      const allWinScenario = result.scenari[numPartite];
+      winChild = {
+        type: 'leaf',
+        profit: allWinScenario.guadagno,
+        rating: allWinScenario.rating,
+        lossCount: 0,
+        hasRefund: false,
+        scenario: allWinScenario.nome,
+      };
+    } else {
+      winChild = buildNode(eventIdx + 1);
+    }
+
+    const coverageProfit = roundTo(pr.totalCoverageStake * (pr.effectiveOdds - 1), 2);
+
+    return {
+      type: 'node',
+      eventIndex: eventIdx,
+      eventName: `Evento ${eventIdx + 1}`,
+      coverageStake: pr.totalCoverageStake,
+      coverageStakes: pr.coverageStakes,
+      coverageProfit,
+      win: winChild,
+      lose: loseLeaf,
+    };
+  }
+
+  return buildNode(0);
+}
+
 export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureInput): MultiplicatoreCopertureResult {
+  // Route to PERDI 1 if subMode is perdi1 and mode is normale
+  if (input.mode === 'normale' && input.subMode === 'perdi1') {
+    return calculatePerdi1Tree(input);
+  }
+
   const {
     mode,
     numPartite,
@@ -296,7 +613,7 @@ export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureI
     });
   }
 
-  return {
+  const baseResult: MultiplicatoreCopertureResult = {
     partiteResults,
     totalBackOdds: totalBack,
     totalMaggOdds: totalMagg,
@@ -305,6 +622,11 @@ export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureI
     ratingMedio,
     guadagnoMedio,
   };
+
+  // Build standard tree for visualization
+  baseResult.tree = buildStandardTree(baseResult, input);
+
+  return baseResult;
 }
 
 export function validateMultiplicatoreCopertureInput(input: Partial<MultiplicatoreCopertureInput>): string[] {

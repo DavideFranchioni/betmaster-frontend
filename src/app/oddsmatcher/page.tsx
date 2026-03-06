@@ -46,10 +46,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { backendAPI } from '@/lib/api/backend';
 import type { OddsEvent, BackendConfig, EventSearchResult } from '@/types/oddsmatcher';
 
 // ============= CONSTANTS =============
+const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20'];
+
 const BOOKMAKERS: Record<string, string> = {
   '1': '888sport', '2': 'Bet365', '4': 'Betfairsportbook', '5': 'Betflagsportbook',
   '6': 'Lottomatica', '7': 'Bwin', '9': 'Eurobet', '11': 'Giocodigitale',
@@ -539,7 +542,8 @@ export default function OddsMatcherPage() {
   
   // Filters
   const [exchange, setExchange] = useState<string>('betfair');
-  const [selectedBookmakers, setSelectedBookmakers] = useState<string[]>(Object.keys(BOOKMAKERS));
+  const [presetBookmakers, setPresetBookmakers] = useState<'tutti' | 'nostri'>('nostri');
+  const [selectedBookmakers, setSelectedBookmakers] = useState<string[]>(NOSTRI_BOOKMAKERS);
   const [selectedSports, setSelectedSports] = useState<string[]>(Object.keys(SPORTS));
   const [selectedBetTypes, setSelectedBetTypes] = useState<string[]>(Object.keys(BET_TYPES));
   
@@ -714,7 +718,8 @@ export default function OddsMatcherPage() {
     setAppliedFilters({});
     setSelectedSports(Object.keys(SPORTS));
     setSelectedBetTypes(Object.keys(BET_TYPES));
-    setSelectedBookmakers(Object.keys(BOOKMAKERS));
+    setPresetBookmakers('nostri');
+    setSelectedBookmakers(NOSTRI_BOOKMAKERS);
     setSearchEvents([]);
     setHideEvents([]);
     setActiveFilters(false);
@@ -751,7 +756,7 @@ export default function OddsMatcherPage() {
             <Dialog open={showRfSettings} onOpenChange={setShowRfSettings}>
               <DialogTrigger asChild><Button size="sm" className="bg-brand-primary hover:bg-brand-secondary"><Settings size={14} /><span className="ml-1 hidden sm:inline">RF</span></Button></DialogTrigger>
               <DialogContent className="w-[90vw] max-w-md bg-white">
-                <DialogHeader className="bg-brand-primary text-white p-3 -m-6 mb-4 rounded-t-lg"><DialogTitle>Impostazioni RF</DialogTitle></DialogHeader>
+                <DialogHeader className="bg-brand-primary text-white px-5 py-3.5 -mx-6 -mt-6 mb-2 rounded-t-xl"><DialogTitle>Impostazioni RF</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-2">
                   <div><Label>Importo Puntata (€)</Label><Input type="number" value={rfSettings.back_stake} onChange={(e) => setRfSettings(s => ({ ...s, back_stake: e.target.value }))} className="mt-1" /></div>
                   <div><Label>Importo Rimborso (€)</Label><Input type="number" value={rfSettings.refund} onChange={(e) => setRfSettings(s => ({ ...s, refund: e.target.value }))} className="mt-1" /></div>
@@ -763,7 +768,7 @@ export default function OddsMatcherPage() {
             <Dialog open={showCommission} onOpenChange={setShowCommission}>
               <DialogTrigger asChild><Button size="sm" className="bg-brand-primary hover:bg-brand-secondary"><Settings size={14} /><span className="ml-1 hidden sm:inline">Commissione</span></Button></DialogTrigger>
               <DialogContent className="w-[90vw] max-w-md bg-white">
-                <DialogHeader className="bg-brand-primary text-white p-3 -m-6 mb-4 rounded-t-lg"><DialogTitle>Commissioni Exchange</DialogTitle></DialogHeader>
+                <DialogHeader className="bg-brand-primary text-white px-5 py-3.5 -mx-6 -mt-6 mb-2 rounded-t-xl"><DialogTitle>Commissioni Exchange</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-2">
                   <div><Label>Betfair (decimale, 0.045 = 4.5%)</Label><Input type="text" value={commissions.betfair} onChange={(e) => setCommissions(c => ({ ...c, betfair: e.target.value.replace(',', '.') }))} className="mt-1" /></div>
                   <div><Label>Betflag (decimale, 0.05 = 5%)</Label><Input type="text" value={commissions.betflag} onChange={(e) => setCommissions(c => ({ ...c, betflag: e.target.value.replace(',', '.') }))} className="mt-1" /></div>
@@ -775,24 +780,41 @@ export default function OddsMatcherPage() {
             <Dialog open={showFilters} onOpenChange={setShowFilters}>
               <DialogTrigger asChild><Button size="sm" className="bg-brand-primary hover:bg-brand-secondary"><Filter size={14} /><span className="ml-1 hidden sm:inline">Filtra</span></Button></DialogTrigger>
               <DialogContent className="w-[95vw] max-w-lg bg-white">
-                <DialogHeader className="bg-brand-primary text-white p-3 -m-6 mb-4 rounded-t-lg"><DialogTitle>Filtri Avanzati</DialogTitle></DialogHeader>
-                <div className="space-y-3 py-2">
-                  <div className="grid grid-cols-3 gap-2 items-center">
-                    <Label className="text-sm">Rating (%)</Label>
-                    <div className="flex items-center gap-1"><span className="text-xs">da</span><Input type="number" value={tempFilters.rating_from} onChange={(e) => setTempFilters(f => ({ ...f, rating_from: e.target.value }))} /></div>
-                    <div className="flex items-center gap-1"><span className="text-xs">a</span><Input type="number" value={tempFilters.rating_to} onChange={(e) => setTempFilters(f => ({ ...f, rating_to: e.target.value }))} /></div>
+                <DialogHeader className="bg-brand-primary text-white px-5 py-3.5 -mx-6 -mt-6 mb-2 rounded-t-xl"><DialogTitle>Filtri Avanzati</DialogTitle></DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700">Rating (%)</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-5">da</span><Input type="number" value={tempFilters.rating_from} onChange={(e) => setTempFilters(f => ({ ...f, rating_from: e.target.value }))} placeholder="0" /></div>
+                      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-5">a</span><Input type="number" value={tempFilters.rating_to} onChange={(e) => setTempFilters(f => ({ ...f, rating_to: e.target.value }))} placeholder="100" /></div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 items-center">
-                    <Label className="text-sm">Quote</Label>
-                    <div className="flex items-center gap-1"><span className="text-xs">da</span><Input type="number" step="0.01" value={tempFilters.odds_from} onChange={(e) => setTempFilters(f => ({ ...f, odds_from: e.target.value }))} /></div>
-                    <div className="flex items-center gap-1"><span className="text-xs">a</span><Input type="number" step="0.01" value={tempFilters.odds_to} onChange={(e) => setTempFilters(f => ({ ...f, odds_to: e.target.value }))} /></div>
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700">Quote</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-5">da</span><Input type="number" step="0.01" value={tempFilters.odds_from} onChange={(e) => setTempFilters(f => ({ ...f, odds_from: e.target.value }))} placeholder="1.00" /></div>
+                      <div className="flex items-center gap-2"><span className="text-xs text-gray-500 w-5">a</span><Input type="number" step="0.01" value={tempFilters.odds_to} onChange={(e) => setTempFilters(f => ({ ...f, odds_to: e.target.value }))} placeholder="50.00" /></div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 items-center">
-                    <Label className="text-sm">Liquidità Min.</Label>
-                    <div className="flex items-center gap-1 col-span-2"><span className="text-xs">€</span><Input type="number" value={tempFilters.min_liquidity} onChange={(e) => setTempFilters(f => ({ ...f, min_liquidity: e.target.value }))} /></div>
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700">Data Evento</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-5">da</span>
+                        <DateTimePicker value={tempFilters.date_from} onChange={(v) => setTempFilters(f => ({ ...f, date_from: v }))} className="flex-1" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-5">a</span>
+                        <DateTimePicker value={tempFilters.date_to} onChange={(v) => setTempFilters(f => ({ ...f, date_to: v }))} className="flex-1" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={applyFilters} className="flex-1 bg-emerald-500 hover:bg-emerald-600 font-bold">Applica</Button>
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium text-gray-700">Liquidità Min.</Label>
+                    <div className="flex items-center gap-2"><span className="text-xs text-gray-500">€</span><Input type="number" value={tempFilters.min_liquidity} onChange={(e) => setTempFilters(f => ({ ...f, min_liquidity: e.target.value }))} placeholder="0" /></div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button onClick={applyFilters} className="flex-1 bg-brand-accent hover:bg-brand-gold text-brand-primary font-bold">Applica</Button>
                     <Button onClick={clearFilters} variant="outline" className="flex-1 font-bold">Cancella</Button>
                   </div>
                 </div>
@@ -804,7 +826,26 @@ export default function OddsMatcherPage() {
           </div>
 
           {/* Filters Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end mb-3 max-w-3xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end mb-3 max-w-4xl mx-auto">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-500">Preset</span>
+              <select
+                value={presetBookmakers}
+                onChange={(e) => {
+                  const value = e.target.value as 'tutti' | 'nostri';
+                  setPresetBookmakers(value);
+                  if (value === 'nostri') {
+                    setSelectedBookmakers(NOSTRI_BOOKMAKERS);
+                  } else {
+                    setSelectedBookmakers(Object.keys(BOOKMAKERS));
+                  }
+                }}
+                className="border rounded-md px-2 py-1.5 text-sm bg-white h-9"
+              >
+                <option value="tutti">Tutti</option>
+                <option value="nostri">Nostri</option>
+              </select>
+            </div>
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-500">Sport</span>
               <MultiSelect options={sportNames} selected={selectedSports} onChange={setSelectedSports} placeholder="Sport" allLabel="Tutti" showIcons icons={sportIcons} />

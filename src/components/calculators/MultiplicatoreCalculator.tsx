@@ -40,6 +40,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import type { BetMode, SavedMultipla } from "@/types/calculator";
 
 // Exchange disponibili (commissioni default come NinjaBet: 0.045 per Betfair, 0.05 per Betflag)
@@ -564,12 +565,10 @@ export function MultiplicatoreCalculator() {
                   <tr key={i} className="border-t hover:bg-gray-50">
                     {/* Data */}
                     <td className="px-2 py-2">
-                      <Input
-                        type="text"
+                      <DateTimePicker
                         value={partite[i].data}
-                        onChange={(e) => updatePartita(i, 'data', e.target.value)}
-                        placeholder="GG/MM/AAAA HH:MM"
-                        className="text-xs"
+                        onChange={(v) => updatePartita(i, 'data', v)}
+                        className="w-[150px]"
                       />
                     </td>
                     {/* Nome Partita */}

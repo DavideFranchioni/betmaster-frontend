@@ -12,6 +12,8 @@ import {
   Save,
   FolderOpen,
   Loader2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,8 @@ import {
   roundTo,
   type MultiplicatoreCopertureInput,
   type MultiplicatoreCopertureResult,
+  type CoverageTreeNode,
+  type CoverageTreeLeaf,
 } from "@/lib/calculators/multiplicatore-coperture";
 import {
   parseNumericInput,
@@ -39,6 +43,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import type { BetMode, SavedMultipla } from "@/types/calculator";
 
 // Bookmaker disponibili
@@ -63,6 +68,7 @@ const BOOKMAKERS = [
 
 // State per ogni partita
 interface PartitaState {
+  data: string;
   nome: string;
   numEsiti: 2 | 3;
   odds: string[];    // odds[0]=Q1, odds[1]=QX o Q2, odds[2]=Q2 (se 3 esiti)
@@ -71,6 +77,7 @@ interface PartitaState {
 }
 
 const DEFAULT_PARTITA: PartitaState = {
+  data: '',
   nome: '',
   numEsiti: 3,
   odds: ['', '', ''],
@@ -78,8 +85,109 @@ const DEFAULT_PARTITA: PartitaState = {
   manualStake: '',
 };
 
+// Tree node component
+function TreeNodeView({
+  node,
+  partite,
+  depth,
+  mode,
+  backStake,
+  isPerdi1,
+}: {
+  node: CoverageTreeNode;
+  partite: { nome: string }[];
+  depth: number;
+  mode: BetMode;
+  backStake: number;
+  isPerdi1: boolean;
+}) {
+  const [expanded, setExpanded] = useState(depth < 3);
+  const eventName = partite[node.eventIndex]?.nome || node.eventName;
+
+  const renderChild = (child: CoverageTreeNode | CoverageTreeLeaf, isWin: boolean) => {
+    const branchColor = isWin ? 'border-green-500' : 'border-red-500';
+    const bgColor = isWin ? 'bg-green-50' : 'bg-red-50';
+    const label = isWin ? 'Vince' : 'Perde';
+
+    if (child.type === 'leaf') {
+      const ratingLabel = (mode === 'riskfree' || isPerdi1) ? 'RF' : 'Rating';
+      return (
+        <div className={cn("ml-6 mt-1 pl-3 border-l-2", branchColor)}>
+          <div className={cn("inline-block rounded px-2 py-1 text-xs", bgColor)}>
+            <span className="font-medium">{label}</span>
+            <span className="mx-1">→</span>
+            <span className={cn("font-bold", child.profit >= 0 ? "text-profit" : "text-loss")}>
+              {child.profit >= 0 ? '+' : ''}{child.profit}€
+            </span>
+            <span className="text-gray-500 ml-1">({ratingLabel}: {child.rating}%)</span>
+            {child.hasRefund && (
+              <span className="ml-1 px-1 py-0.5 bg-yellow-200 text-yellow-800 rounded text-[10px] font-medium">
+                Rimborso
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={cn("ml-6 mt-1 pl-3 border-l-2", branchColor)}>
+        <div className={cn("text-[10px] font-medium mb-0.5 px-1", isWin ? "text-green-700" : "text-red-700")}>
+          {label}
+        </div>
+        <TreeNodeView
+          node={child}
+          partite={partite}
+          depth={depth + 1}
+          mode={mode}
+          backStake={backStake}
+          isPerdi1={isPerdi1}
+        />
+      </div>
+    );
+  };
+
+  return (
+    <div className="text-sm">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-left w-full group"
+      >
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        )}
+        <div className="bg-gray-100 rounded px-2 py-1 group-hover:bg-gray-200 transition-colors">
+          <span className="font-medium text-gray-800">{eventName}</span>
+          <span className="text-gray-500 ml-2 text-xs">
+            Cop: {node.coverageStake}€
+          </span>
+          {node.coverageStakes.length > 0 && (
+            <span className="text-gray-400 ml-1 text-[10px]">
+              ({node.coverageStakes.map((s, i) => `C${i + 1}: ${s}`).join(', ')})
+            </span>
+          )}
+          <span className="text-gray-500 ml-2 text-xs">
+            Prof: <span className="text-profit">{node.coverageProfit > 0 ? '+' : ''}{node.coverageProfit}€</span>
+          </span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="mt-0.5">
+          {renderChild(node.win, true)}
+          {renderChild(node.lose, false)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MultiplicatoreCoperturCalculator() {
   const [mode, setMode] = useState<BetMode>('normale');
+  const [subMode, setSubMode] = useState<'standard' | 'perdi1'>('standard');
+  const [rimborsoPerdi1, setRimborsoPerdi1] = useState<string>('');
+  const [treeOpen, setTreeOpen] = useState(true);
   const [numPartite, setNumPartite] = useState<number>(2);
   const [backStake, setBackStake] = useState<string>('100');
   const [backRefundStake, setBackRefundStake] = useState<string>('50');
@@ -154,9 +262,11 @@ export function MultiplicatoreCoperturCalculator() {
   // Parse input per il calcolo
   const parsedInput: MultiplicatoreCopertureInput = useMemo(() => ({
     mode,
+    subMode: mode === 'normale' ? subMode : 'standard',
     numPartite,
     backStake: parseNumericInput(backStake),
     backRefundStake: parseNumericInput(backRefundStake),
+    rimborsoPerdi1: parseNumericInput(rimborsoPerdi1),
     partite: partite.map(p => ({
       numEsiti: p.numEsiti,
       odds: p.odds.slice(0, p.numEsiti).map(o => parseNumericInput(o)),
@@ -165,7 +275,7 @@ export function MultiplicatoreCoperturCalculator() {
     })),
     maggiorazioneQuota: parseNumericInput(maggiorazioneQuota),
     maggiorazioneTipo,
-  }), [mode, numPartite, backStake, backRefundStake, partite, maggiorazioneQuota, maggiorazioneTipo]);
+  }), [mode, subMode, numPartite, backStake, backRefundStake, rimborsoPerdi1, partite, maggiorazioneQuota, maggiorazioneTipo]);
 
   const result: MultiplicatoreCopertureResult = useMemo(() => {
     return calculateMultiplicatoreCoperture(parsedInput);
@@ -189,23 +299,27 @@ export function MultiplicatoreCoperturCalculator() {
   const collectState = useCallback(() => {
     return {
       mode,
+      subMode,
       numPartite,
       backStake,
       backRefundStake,
+      rimborsoPerdi1,
       maggiorazioneQuota,
       maggiorazioneTipo,
       nomeMultipla,
       bookmaker,
       partite: partite.slice(0, numPartite).map(p => ({ ...p })),
     };
-  }, [mode, numPartite, backStake, backRefundStake, maggiorazioneQuota, maggiorazioneTipo, nomeMultipla, bookmaker, partite]);
+  }, [mode, subMode, numPartite, backStake, backRefundStake, rimborsoPerdi1, maggiorazioneQuota, maggiorazioneTipo, nomeMultipla, bookmaker, partite]);
 
   // Load state from saved multipla
   const loadState = useCallback((data: Record<string, any>) => {
     if (data.mode) setMode(data.mode);
+    if (data.subMode) setSubMode(data.subMode);
     if (data.numPartite) setNumPartite(data.numPartite);
     if (data.backStake !== undefined) setBackStake(data.backStake);
     if (data.backRefundStake !== undefined) setBackRefundStake(data.backRefundStake);
+    if (data.rimborsoPerdi1 !== undefined) setRimborsoPerdi1(data.rimborsoPerdi1);
     if (data.maggiorazioneQuota !== undefined) setMaggiorazioneQuota(data.maggiorazioneQuota);
     if (data.maggiorazioneTipo) setMaggiorazioneTipo(data.maggiorazioneTipo);
     if (data.nomeMultipla !== undefined) setNomeMultipla(data.nomeMultipla);
@@ -340,6 +454,44 @@ export function MultiplicatoreCoperturCalculator() {
         </CardContent>
       </Card>
 
+      {/* Sub-mode PERDI 1 (solo Normale) */}
+      {mode === 'normale' && (
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 mr-1">Tipo:</span>
+              <button
+                onClick={() => setSubMode('standard')}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-medium transition-colors",
+                  subMode === 'standard'
+                    ? "bg-brand-accent text-brand-primary"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                )}
+              >
+                Standard
+              </button>
+              <button
+                onClick={() => setSubMode('perdi1')}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-medium transition-colors",
+                  subMode === 'perdi1'
+                    ? "bg-brand-accent text-brand-primary"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                )}
+              >
+                PERDI 1
+              </button>
+              {subMode === 'perdi1' && (
+                <span className="text-[10px] text-gray-400 ml-2 hidden md:inline">
+                  Se esattamente 1 evento perde → rimborso
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Impostazioni Generali */}
       <Card>
         <CardContent className="p-4 space-y-4">
@@ -441,9 +593,22 @@ export function MultiplicatoreCoperturCalculator() {
               </div>
             )}
 
+            {mode === 'normale' && subMode === 'perdi1' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Rimborso PERDI 1</label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={rimborsoPerdi1}
+                  onChange={(e) => setRimborsoPerdi1(e.target.value.replace(',', '.'))}
+                  placeholder="50"
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
-                {mode === 'riskfree' ? 'RF Medio' : 'Rating Medio'}
+                {(mode === 'riskfree' || (mode === 'normale' && subMode === 'perdi1')) ? 'RF Medio' : 'Rating Medio'}
               </label>
               <div className="h-10 flex items-center">
                 <span className="text-lg font-bold">{result.ratingMedio}%</span>
@@ -468,6 +633,7 @@ export function MultiplicatoreCoperturCalculator() {
               <thead className="bg-gray-100">
                 <tr>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8">#</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Data</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">Partita</th>
                   <th className="px-2 py-2 text-center font-medium text-gray-600 w-20">Esiti</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Quota multipla</th>
@@ -489,6 +655,14 @@ export function MultiplicatoreCoperturCalculator() {
                       {/* # */}
                       <td className="px-2 py-2 text-center font-medium text-gray-500">
                         {i + 1}
+                      </td>
+                      {/* Data */}
+                      <td className="px-2 py-2">
+                        <DateTimePicker
+                          value={p.data}
+                          onChange={(v) => updatePartita(i, 'data', v)}
+                          className="w-[150px]"
+                        />
                       </td>
                       {/* Nome Partita */}
                       <td className="px-2 py-2">
@@ -639,10 +813,12 @@ export function MultiplicatoreCoperturCalculator() {
                 })}
                 {/* Riga totali */}
                 <tr className="border-t bg-gray-50 font-medium">
-                  <td colSpan={3} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
+                  <td colSpan={4} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
                   <td className="px-2 py-2 text-xs text-back font-bold" colSpan={3}>{result.totalBackOdds}</td>
                   <td></td>
-                  <td className="px-2 py-2 text-right text-xs">Resp. Totale:</td>
+                  <td className="px-2 py-2 text-right text-xs">
+                    {mode === 'normale' && subMode === 'perdi1' ? 'Max Coperture:' : 'Resp. Totale:'}
+                  </td>
                   <td className="px-2 py-2 text-xs text-lay font-bold">{result.totalLiability}&euro;</td>
                 </tr>
               </tbody>
@@ -651,46 +827,87 @@ export function MultiplicatoreCoperturCalculator() {
         </CardContent>
       </Card>
 
-      {/* Scenari */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Scenario Multipla</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-600 w-40">Scenario Multipla</th>
-                  {result.scenari.map((s, i) => (
-                    <th key={i} className="px-3 py-2 text-center font-medium text-gray-600 min-w-[80px]">
-                      {s.nome}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t">
-                  <td className="px-3 py-2 font-medium">Guadagno</td>
-                  {result.scenari.map((s, i) => (
-                    <td key={i} className="px-3 py-2 text-center">
-                      <ProfitDisplay value={s.guadagno} />
-                    </td>
-                  ))}
-                </tr>
-                <tr className="border-t">
-                  <td className="px-3 py-2 font-medium">{mode === 'riskfree' ? 'RF' : 'Rating'}</td>
-                  {result.scenari.map((s, i) => (
-                    <td key={i} className="px-3 py-2 text-center font-medium">
-                      {s.rating}%
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Scenari (nascosto per PERDI 1) */}
+      {!(mode === 'normale' && subMode === 'perdi1') && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Scenario Multipla</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 w-40">Scenario Multipla</th>
+                    {result.scenari.map((s, i) => (
+                      <th key={i} className="px-3 py-2 text-center font-medium text-gray-600 min-w-[80px]">
+                        {s.nome}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-t">
+                    <td className="px-3 py-2 font-medium">Guadagno</td>
+                    {result.scenari.map((s, i) => (
+                      <td key={i} className="px-3 py-2 text-center">
+                        <ProfitDisplay value={s.guadagno} />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-t">
+                    <td className="px-3 py-2 font-medium">{mode === 'riskfree' ? 'RF' : 'Rating'}</td>
+                    {result.scenari.map((s, i) => (
+                      <td key={i} className="px-3 py-2 text-center font-medium">
+                        {s.rating}%
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Albero Risultati */}
+      {result.tree && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Albero Risultati</CardTitle>
+              <button
+                onClick={() => setTreeOpen(!treeOpen)}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+              >
+                {treeOpen ? (
+                  <>
+                    <ChevronDown className="w-4 h-4" />
+                    <span>Chiudi</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronRight className="w-4 h-4" />
+                    <span>Apri</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </CardHeader>
+          {treeOpen && (
+            <CardContent className="p-4 overflow-x-auto">
+              <TreeNodeView
+                node={result.tree}
+                partite={partite}
+                depth={0}
+                mode={mode}
+                backStake={parseNumericInput(backStake)}
+                isPerdi1={mode === 'normale' && subMode === 'perdi1'}
+              />
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Bottoni Salva/Carica */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
