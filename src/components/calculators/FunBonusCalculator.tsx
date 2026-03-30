@@ -17,7 +17,7 @@ export function FunBonusCalculator() {
   const [rtp, setRtp] = useState<string>("95");
   const [saldo, setSaldo] = useState<string>("200");
   const [saldoGiocatoPerc, setSaldoGiocatoPerc] = useState<string>("90");
-  const [altaVarianza, setAltaVarianza] = useState(true);
+  const [altaVarianza, setAltaVarianza] = useState(false);
 
   // State per tooltip
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);

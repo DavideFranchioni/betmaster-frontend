@@ -14,7 +14,25 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -68,6 +86,7 @@ const BOOKMAKERS = [
 
 // State per ogni partita
 interface PartitaState {
+  id: string;
   data: string;
   nome: string;
   numEsiti: 2 | 3;
@@ -77,13 +96,50 @@ interface PartitaState {
 }
 
 const DEFAULT_PARTITA: PartitaState = {
+  id: '',
   data: '',
   nome: '',
   numEsiti: 3,
   odds: ['', '', ''],
-  locked: true,
+  locked: false,
   manualStake: '',
 };
+
+// Sortable table row component
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (dragHandleProps: Record<string, any>) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1 : 0,
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} className="border-t hover:bg-gray-50">
+      {children({
+        ref: setActivatorNodeRef,
+        ...listeners,
+        ...attributes,
+      })}
+    </tr>
+  );
+}
 
 // Tree node component
 function TreeNodeView({
@@ -197,7 +253,7 @@ export function MultiplicatoreCoperturCalculator() {
   const [bookmaker, setBookmaker] = useState<string>('888sport');
 
   const [partite, setPartite] = useState<PartitaState[]>(
-    Array(10).fill(null).map(() => ({ ...DEFAULT_PARTITA, odds: ['', '', ''] }))
+    Array(10).fill(null).map((_, i) => ({ ...DEFAULT_PARTITA, id: `p-${i}`, odds: ['', '', ''] }))
   );
 
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
@@ -238,11 +294,24 @@ export function MultiplicatoreCoperturCalculator() {
 
   const toggleLock = (index: number) => {
     const newPartite = [...partite];
-    newPartite[index] = {
-      ...newPartite[index],
-      locked: !newPartite[index].locked,
-      manualStake: '',
-    };
+    const wasLocked = newPartite[index].locked;
+
+    if (!wasLocked) {
+      // Locking: freeze current calculated value as manualStake
+      const pr = result.partiteResults[index];
+      newPartite[index] = {
+        ...newPartite[index],
+        locked: true,
+        manualStake: pr ? String(pr.totalCoverageStake) : '',
+      };
+    } else {
+      // Unlocking: clear manualStake, return to auto-calc
+      newPartite[index] = {
+        ...newPartite[index],
+        locked: false,
+        manualStake: '',
+      };
+    }
     setPartite(newPartite);
   };
 
@@ -258,6 +327,25 @@ export function MultiplicatoreCoperturCalculator() {
       setTimeout(() => setCopiedIdx(null), 2000);
     }
   };
+
+  // Drag & Drop
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setPartite((items) => {
+        const oldIndex = items.findIndex((p) => p.id === active.id);
+        const newIndex = items.findIndex((p) => p.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const sortableIds = partite.slice(0, numPartite).map((p) => p.id);
 
   // Parse input per il calcolo
   const parsedInput: MultiplicatoreCopertureInput = useMemo(() => ({
@@ -325,13 +413,14 @@ export function MultiplicatoreCoperturCalculator() {
     if (data.nomeMultipla !== undefined) setNomeMultipla(data.nomeMultipla);
     if (data.bookmaker) setBookmaker(data.bookmaker);
     if (data.partite && Array.isArray(data.partite)) {
-      const loaded = data.partite.map((p: any) => ({
+      const loaded = data.partite.map((p: any, i: number) => ({
         ...DEFAULT_PARTITA,
         odds: ['', '', ''],
         ...p,
+        id: p.id || `p-${i}`,
       }));
       while (loaded.length < 10) {
-        loaded.push({ ...DEFAULT_PARTITA, odds: ['', '', ''] });
+        loaded.push({ ...DEFAULT_PARTITA, id: `p-${loaded.length}`, odds: ['', '', ''] });
       }
       setPartite(loaded);
     }
@@ -629,9 +718,11 @@ export function MultiplicatoreCoperturCalculator() {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <table className="w-full text-sm">
               <thead className="bg-gray-100">
                 <tr>
+                  <th className="px-1 py-2 w-6"></th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8">#</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Data</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">Partita</th>
@@ -644,6 +735,7 @@ export function MultiplicatoreCoperturCalculator() {
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Resp.</th>
                 </tr>
               </thead>
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               <tbody>
                 {Array.from({ length: numPartite }, (_, i) => {
                   const p = partite[i];
@@ -651,7 +743,16 @@ export function MultiplicatoreCoperturCalculator() {
                   const labels = getOddsLabels(p.numEsiti);
 
                   return (
-                    <tr key={i} className="border-t hover:bg-gray-50">
+                    <SortableRow key={p.id} id={p.id}>
+                      {(dragHandleProps) => (
+                        <>
+                      {/* Drag handle */}
+                      <td
+                        className="px-1 py-2 cursor-grab active:cursor-grabbing"
+                        {...dragHandleProps}
+                      >
+                        <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500" />
+                      </td>
                       {/* # */}
                       <td className="px-2 py-2 text-center font-medium text-gray-500">
                         {i + 1}
@@ -746,14 +847,14 @@ export function MultiplicatoreCoperturCalculator() {
                             "p-1 rounded",
                             p.locked ? "text-green-600" : "text-gray-400"
                           )}
-                          title={p.locked ? "Bloccato (auto)" : "Sbloccato (manuale)"}
+                          title={p.locked ? "Bloccato (manuale)" : "Sbloccato (auto)"}
                         >
                           {p.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                         </button>
                       </td>
                       {/* Puntate Copertura */}
                       <td className="px-2 py-2">
-                        {p.locked ? (
+                        {!p.locked ? (
                           <div className="space-y-1">
                             {pr?.coverageStakes.map((stake, j) => (
                               <div key={j} className="flex items-center gap-1">
@@ -808,12 +909,14 @@ export function MultiplicatoreCoperturCalculator() {
                       <td className="px-2 py-2 font-medium text-lay text-xs">
                         {pr?.liability || 0}
                       </td>
-                    </tr>
+                        </>
+                      )}
+                    </SortableRow>
                   );
                 })}
                 {/* Riga totali */}
                 <tr className="border-t bg-gray-50 font-medium">
-                  <td colSpan={4} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
+                  <td colSpan={5} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
                   <td className="px-2 py-2 text-xs text-back font-bold" colSpan={3}>{result.totalBackOdds}</td>
                   <td></td>
                   <td className="px-2 py-2 text-right text-xs">
@@ -822,7 +925,9 @@ export function MultiplicatoreCoperturCalculator() {
                   <td className="px-2 py-2 text-xs text-lay font-bold">{result.totalLiability}&euro;</td>
                 </tr>
               </tbody>
+              </SortableContext>
             </table>
+            </DndContext>
           </div>
         </CardContent>
       </Card>
@@ -996,7 +1101,7 @@ export function MultiplicatoreCoperturCalculator() {
           <strong>P</strong> = Prima partita persa | <strong>VP</strong> = Prima vinta, seconda persa | etc.
         </p>
         <p>
-          <strong>Lock/Unlock</strong>: Sblocca per inserire stake totale copertura manuale
+          <strong>Lock/Unlock</strong>: Blocca per congelare lo stake copertura, sblocca per il calcolo automatico
         </p>
         <p>
           Le coperture sono calcolate con il metodo <strong>dutching</strong> (punta-punta): ogni esito di copertura garantisce lo stesso ritorno.

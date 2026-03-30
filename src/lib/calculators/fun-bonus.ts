@@ -53,13 +53,12 @@ export function calculateFunBonus(input: FunBonusInput): FunBonusResult {
   // 2. Giocato rimanente
   const giocatoRimanente = giocatoTotale - (giocatoTotale * saldoGiocatoPerc / 100);
 
-  // 3. Puntata minima Big Win
-  let puntataBigWin: number;
-  if (rollover <= 40) {
-    puntataBigWin = bonus / 100 * (altaVarianza ? 3 : 5);
-  } else {
-    puntataBigWin = bonus / 100 * (altaVarianza ? 5 : 8);
-  }
+  // 3. Puntata minima Big Win (interpolazione lineare 10x→60x)
+  const minPerc = altaVarianza ? 1 : 1.5;
+  const maxPerc = altaVarianza ? 5 : 8;
+  const clampedRollover = Math.max(10, Math.min(60, rollover));
+  const perc = minPerc + (clampedRollover - 10) * (maxPerc - minPerc) / (60 - 10);
+  let puntataBigWin = bonus * perc / 100;
   // Scala la puntata in base al rollover rimanente
   puntataBigWin = puntataBigWin * (100 - saldoGiocatoPerc) / 100;
 

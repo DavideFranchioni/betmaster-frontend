@@ -468,7 +468,7 @@ export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureI
     lastStake = 0;
   }
 
-  if (!partite[lastIdx].locked && partite[lastIdx].manualStake !== undefined) {
+  if (partite[lastIdx].locked && partite[lastIdx].manualStake !== undefined) {
     lastStake = partite[lastIdx].manualStake!;
   }
 
@@ -484,7 +484,7 @@ export function calculateMultiplicatoreCoperture(input: MultiplicatoreCopertureI
 
     let newStake: number;
 
-    if (!partite[i].locked && partite[i].manualStake !== undefined) {
+    if (partite[i].locked && partite[i].manualStake !== undefined) {
       newStake = partite[i].manualStake!;
     } else {
       // Punta2 + Punta2: newStake = currentStake * (nextLayOdds - 1) / currentLayOdds
