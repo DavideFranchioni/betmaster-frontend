@@ -784,7 +784,7 @@ export default function DutcherPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
   // Filters
-  const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20'];
+  const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20', '65'];
   const [presetBookmakers, setPresetBookmakers] = useState<'tutti' | 'nostri'>('nostri');
   const [selectedBookmakers1, setSelectedBookmakers1] = useState<string[]>(NOSTRI_BOOKMAKERS);
   const [selectedBookmakers2, setSelectedBookmakers2] = useState<string[]>(NOSTRI_BOOKMAKERS);

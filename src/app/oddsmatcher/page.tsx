@@ -51,7 +51,7 @@ import { backendAPI } from '@/lib/api/backend';
 import type { OddsEvent, BackendConfig, EventSearchResult } from '@/types/oddsmatcher';
 
 // ============= CONSTANTS =============
-const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20'];
+const NOSTRI_BOOKMAKERS = ['16', '39', '7', '28', '15', '6', '9', '2', '54', '20', '65'];
 
 const BOOKMAKERS: Record<string, string> = {
   '1': '888sport', '2': 'Bet365', '4': 'Betfairsportbook', '5': 'Betflagsportbook',
