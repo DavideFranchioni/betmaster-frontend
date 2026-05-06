@@ -90,6 +90,7 @@ interface PartitaState {
   id: string;
   data: string;
   nome: string;
+  scommessa: string;
   numEsiti: 2 | 3;
   odds: string[];    // odds[0]=Q1, odds[1]=QX o Q2, odds[2]=Q2 (se 3 esiti)
   locked: boolean;
@@ -100,6 +101,7 @@ const DEFAULT_PARTITA: PartitaState = {
   id: '',
   data: '',
   nome: '',
+  scommessa: '',
   numEsiti: 3,
   odds: ['', '', ''],
   locked: false,
@@ -730,6 +732,7 @@ export function MultiplicatoreCoperturCalculator() {
                   <th className="px-2 py-2 text-left font-medium text-gray-600 w-8">#</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[150px]">Data</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[120px]">Partita</th>
+                  <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[100px]">Scommessa</th>
                   <th className="px-2 py-2 text-center font-medium text-gray-600 w-20">Esiti</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Quota multipla</th>
                   <th className="px-2 py-2 text-left font-medium text-gray-600 min-w-[70px]">Copertura 1</th>
@@ -776,6 +779,16 @@ export function MultiplicatoreCoperturCalculator() {
                           value={p.nome}
                           onChange={(e) => updatePartita(i, 'nome', e.target.value)}
                           placeholder="Es. Juve - Inter"
+                          className="text-xs"
+                        />
+                      </td>
+                      {/* Scommessa */}
+                      <td className="px-2 py-2">
+                        <Input
+                          type="text"
+                          value={p.scommessa}
+                          onChange={(e) => updatePartita(i, 'scommessa', e.target.value)}
+                          placeholder="Es. 1X2"
                           className="text-xs"
                         />
                       </td>
@@ -929,7 +942,7 @@ export function MultiplicatoreCoperturCalculator() {
                 })}
                 {/* Riga totali */}
                 <tr className="border-t bg-gray-50 font-medium">
-                  <td colSpan={5} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
+                  <td colSpan={6} className="px-2 py-2 text-right text-xs">Quota Multipla:</td>
                   <td className="px-2 py-2 text-xs text-back font-bold" colSpan={3}>{result.totalBackOdds}</td>
                   <td></td>
                   <td className="px-2 py-2 text-right text-xs">
