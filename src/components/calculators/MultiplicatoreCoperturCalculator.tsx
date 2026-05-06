@@ -52,6 +52,7 @@ import {
 } from "@/lib/utils";
 import { backendAPI } from "@/lib/api/backend";
 import { SavedMultipleDialog } from "./SavedMultipleDialog";
+import { PuntaPuntaCalculator } from "./PuntaPuntaCalculator";
 import { Input as DialogInput } from "@/components/ui/input";
 import {
   Dialog,
@@ -257,6 +258,9 @@ export function MultiplicatoreCoperturCalculator() {
   );
 
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
+
+  // Singola Punta-Punta dialog
+  const [singolaCalcIdx, setSingolaCalcIdx] = useState<number | null>(null);
 
   // Save/Load state
   const [currentMultiplaId, setCurrentMultiplaId] = useState<number | null>(null);
@@ -839,18 +843,27 @@ export function MultiplicatoreCoperturCalculator() {
                           className="w-[70px] text-xs"
                         />
                       </td>
-                      {/* Lock */}
+                      {/* Lock + Singola */}
                       <td className="px-2 py-2">
-                        <button
-                          onClick={() => toggleLock(i)}
-                          className={cn(
-                            "p-1 rounded",
-                            p.locked ? "text-green-600" : "text-gray-400"
-                          )}
-                          title={p.locked ? "Bloccato (manuale)" : "Sbloccato (auto)"}
-                        >
-                          {p.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                        </button>
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            onClick={() => toggleLock(i)}
+                            className={cn(
+                              "p-1 rounded",
+                              p.locked ? "text-green-600" : "text-gray-400"
+                            )}
+                            title={p.locked ? "Bloccato (manuale)" : "Sbloccato (auto)"}
+                          >
+                            {p.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => setSingolaCalcIdx(i)}
+                            className="p-1 rounded text-gray-400 hover:text-brand-accent"
+                            title="Apri Punta-Punta singola"
+                          >
+                            <Calculator className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                       {/* Puntate Copertura */}
                       <td className="px-2 py-2">
@@ -1092,6 +1105,43 @@ export function MultiplicatoreCoperturCalculator() {
               Salva
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Punta-Punta Singola */}
+      <Dialog open={singolaCalcIdx !== null} onOpenChange={(open) => !open && setSingolaCalcIdx(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Punta-Punta Singola
+              {singolaCalcIdx !== null && partite[singolaCalcIdx]?.nome && (
+                <span className="text-gray-500 font-normal ml-2">
+                  — {partite[singolaCalcIdx].nome}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Simulazione della partita giocata in singola con stake di 100€. Modifica liberamente per confrontare scenari.
+            </DialogDescription>
+          </DialogHeader>
+          {singolaCalcIdx !== null && (() => {
+            const p = partite[singolaCalcIdx];
+            const initialOdds = p.numEsiti === 2
+              ? [p.odds[0] || '', p.odds[1] || '']
+              : [p.odds[0] || '', p.odds[1] || '', p.odds[2] || ''];
+            return (
+              <PuntaPuntaCalculator
+                key={`singola-${p.id}-${singolaCalcIdx}`}
+                hideHeader
+                initialValues={{
+                  mode: 'normale',
+                  numOutcomes: p.numEsiti,
+                  backStake: '100',
+                  odds: initialOdds,
+                }}
+              />
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

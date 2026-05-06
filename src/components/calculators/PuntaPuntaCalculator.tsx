@@ -23,13 +23,32 @@ import {
 } from "@/lib/utils";
 import type { BetMode } from "@/types/calculator";
 
-export function PuntaPuntaCalculator() {
+interface PuntaPuntaCalculatorProps {
+  initialValues?: {
+    mode?: BetMode;
+    numOutcomes?: number;
+    backStake?: string;
+    backRefundStake?: string;
+    odds?: string[];
+  };
+  hideHeader?: boolean;
+}
+
+export function PuntaPuntaCalculator({ initialValues, hideHeader = false }: PuntaPuntaCalculatorProps = {}) {
   // State per gli input
-  const [mode, setMode] = useState<BetMode>('normale');
-  const [numOutcomes, setNumOutcomes] = useState<number>(2);
-  const [backStake, setBackStake] = useState<string>('100');
-  const [backRefundStake, setBackRefundStake] = useState<string>('100');
-  const [odds, setOdds] = useState<string[]>(['0.00', '0.00', '0.00', '0.00', '0.00']);
+  const [mode, setMode] = useState<BetMode>(initialValues?.mode ?? 'normale');
+  const [numOutcomes, setNumOutcomes] = useState<number>(initialValues?.numOutcomes ?? 2);
+  const [backStake, setBackStake] = useState<string>(initialValues?.backStake ?? '100');
+  const [backRefundStake, setBackRefundStake] = useState<string>(initialValues?.backRefundStake ?? '100');
+  const [odds, setOdds] = useState<string[]>(() => {
+    const base = ['0.00', '0.00', '0.00', '0.00', '0.00'];
+    if (initialValues?.odds) {
+      initialValues.odds.forEach((o, i) => {
+        if (i < 5 && o) base[i] = o;
+      });
+    }
+    return base;
+  });
 
   // Handler per modificare le quote
   const handleOddsChange = (index: number, value: string) => {
@@ -81,18 +100,20 @@ export function PuntaPuntaCalculator() {
   return (
     <div className="w-full max-w-2xl mx-auto space-y-4">
       {/* Header */}
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center gap-2 text-brand-accent mb-2">
-          <Calculator className="w-6 h-6" />
-          <span className="text-sm font-medium uppercase tracking-wider">Calcolatore</span>
+      {!hideHeader && (
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center gap-2 text-brand-accent mb-2">
+            <Calculator className="w-6 h-6" />
+            <span className="text-sm font-medium uppercase tracking-wider">Calcolatore</span>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+            Punta-Punta
+          </h1>
+          <p className="text-gray-500 mt-1 text-sm">
+            Calcola gli importi per coprire più esiti su bookmaker diversi
+          </p>
         </div>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-          Punta-Punta
-        </h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Calcola gli importi per coprire più esiti su bookmaker diversi
-        </p>
-      </div>
+      )}
 
       {/* Selezione Modalità */}
       <Card>
